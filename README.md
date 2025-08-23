@@ -53,6 +53,10 @@
 chmod +x run.sh
 ```
 
+3. **환경 변수 설정**   
+* .env.template 을 .env로 이름 수정
+* OPENAI_API_KEY 설정
+
 ---
 
 ## 실행 방법

@@ -27,7 +27,7 @@ fi
 # python src/init_db.py
 
 # 서버 실행 (FastAPI)
-uvicorn src.server:app --reload &
+uvicorn src.server:app &
 
 # 챗봇 실행 (Gradio UI)
 python src/chatbot.py

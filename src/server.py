@@ -4,7 +4,6 @@ FastAPI 기반 서버 모듈입니다.
 - QA 내용은 Milvus Vector DB에서 검색 및 불러오기
 - 대화 내용 저장 및 불러오기
 '''
-from init_db import init_db
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
@@ -150,5 +149,4 @@ async def chat(data:CHAT):
 
 
 if __name__=="__main__":
-    # init_db() # 처음 벡터 DB를 만들어야 할때 (임베딩에도 비용이 들기에 항상 키지는 말것)
     uvicorn.run("server:app", host="127.0.0.1", port=8000)
