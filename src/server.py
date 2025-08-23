@@ -22,33 +22,41 @@ EMBEDDING_MODEL = os.environ['EMBEDDING_MODEL']
 CHAT_MODEL = os.environ['CHAT_MODEL']
 COLLECTION_NAME = os.environ['COLLECTION_NAME']
 SERVER_API_KEY = os.environ['SERVER_API_KEY']
+
+
 openai_client = OpenAI()
 
 # 벡터 DB 불러오기
-milvus_client = MilvusClient("qa_vector.db")
-app = FastAPI()
-
+try:
+    milvus_client = MilvusClient("qa_vector.db")
+    app = FastAPI()
+except:
+    print("Milvus DB 불러오기 실패")
+    milvus_client = None
 
 # 질문이 스마트 스토어와 관련이 있는지 없는지 확인하는 함수
 def check_relevance(question, chat_history):
-    response = openai_client.responses.create(
-    model=CHAT_MODEL,
-    input=f'''
-사용자와 챗봇 사이의 대화 내역을 보고, 현재 질문이 스마트 스토어와 관련 있는지 판단해주세요.
-- 이전 대화 내용과 현재 질문을 모두 고려해야 합니다.
-- 관련 있으면 "있음", 관련 없으면 "없음"만 출력하세요.
+    try:
+        response = openai_client.responses.create(
+        model=CHAT_MODEL,
+        input=f'''
+    사용자와 챗봇 사이의 대화 내역을 보고, 현재 질문이 스마트 스토어와 관련 있는지 판단해주세요.
+    - 이전 대화 내용과 현재 질문을 모두 고려해야 합니다.
+    - 관련 있으면 "있음", 관련 없으면 "없음"만 출력하세요.
 
-대화 내역:
-{chat_history}
+    대화 내역:
+    {chat_history}
 
-현재 질문:
-{question}
-'''
-    )
-    result = response.output_text
-    if result not in ['없음', '있음']:
-        return {"status":424, "result":f"LLM failed classification : {result}"}
-    return {"status":200, "result":result}
+    현재 질문:
+    {question}
+    '''
+        )
+        result = response.output_text
+        if result not in ['없음', '있음']:
+            return {"status":424, "result":f"관련 여부 분류 실패 : {result}"}
+        return {"status":200, "result":result}
+    except Exception as e:
+        return {"status":503, "result":f"OpenAI API 연결을 실패 했어요. 에러 내역 : {e}"}
 
 
 # 검색된 답변과 질문을 합쳐 최종 답변을 반환하는 함수
@@ -90,17 +98,24 @@ async def stream_answer(msg):
 
 # 레디스에 채팅 내역을 저장, 불러오는 함수
 def save_chat(role, message):
-    r = redis.Redis(host='localhost', port=6379, db=0)
-    data = {'role':role, 'message':message}
-    chat_id = 'naver_qa_test'
-    r.rpush(chat_id, json.dumps(data))
+    try:
+        r = redis.Redis(host='localhost', port=6379, db=0)
+        data = {'role':role, 'message':message}
+        chat_id = 'naver_qa_test'
+        r.rpush(chat_id, json.dumps(data))
+    except Exception as e:
+        print(f"redis 대화 내역 저장 실패 : {e}")
 
 def load_chat(num): # num : 불러올 대화 수
-    r = redis.Redis(host='localhost', port=6379, db=0)
-    chat_id = 'naver_qa_test'
-    messages = r.lrange(chat_id, -num, -1)
-    messages = [json.loads(m) for m in messages]
-    return messages
+    try:
+        r = redis.Redis(host='localhost', port=6379, db=0)
+        chat_id = 'naver_qa_test'
+        messages = r.lrange(chat_id, -num, -1)
+        messages = [json.loads(m) for m in messages]
+        return messages
+    except Exception as e:
+        print(f"redis 대화 내역 불러오기 실패 : {e}")
+        return ""
 
 class CHAT(BaseModel):
     question : str
@@ -115,8 +130,15 @@ async def chat(data:CHAT):
     # 질문이 네이버 스토어 관련인지 확인
     # (현재는 LLM으로 분류하지만 이진 분류는 LLM이 아니더라도 분류기 모델로 학습시키면 GPU 사용량을 줄일 수 있을 것으로 기대)
     relevance_data = check_relevance(question, chat_history)
-    if relevance_data['status']!=200: # 질문이 잘 분류 안 된 경우
+    if relevance_data['status']==424: # 질문이 잘 분류 안 된 경우
         answer = "질문을 정확히 이해하지 못 했어요. 혹시 다시 구체적으로 질문해주실 수 있나요?"
+        save_chat("assistant", answer)
+        return StreamingResponse(
+            stream_answer(answer),
+            media_type="text/plain"
+            )
+    if relevance_data['status']==503: # API 호출 오류
+        answer = relevance_data['result']
         save_chat("assistant", answer)
         return StreamingResponse(
             stream_answer(answer),
@@ -131,11 +153,27 @@ async def chat(data:CHAT):
             )
     
     # 질문 임베딩
-    embedding_res = openai_client.embeddings.create(
-                    input=question,
-                    model=EMBEDDING_MODEL
-                )
-    question_vector = embedding_res.data[0].embedding
+    try:
+        embedding_res = openai_client.embeddings.create(
+                        input=question,
+                        model=EMBEDDING_MODEL
+                    )
+        question_vector = embedding_res.data[0].embedding
+    except Exception as e:
+        answer = f"OpenAI API 연결에 문제가 발생해 답변을 가져올 수 없습니다. 관리자에게 문의해주세요. 에러 : {e}"
+        save_chat("assistant", answer)
+        return StreamingResponse(
+            stream_answer(answer),
+            media_type="text/plain"
+            )             
+
+    if milvus_client is None: # 밀버스 DB에 연결이 안된 경우
+        answer = "DB 연결에 문제가 발생해 답변을 가져올 수 없습니다. 관리자에게 문의해주세요."
+        save_chat("assistant", answer)
+        return StreamingResponse(
+            stream_answer(answer),
+            media_type="text/plain"
+            )        
 
     # 임베딩한 질문과 가장 가까운 쿼리 1개 검색
     db_res = milvus_client.search(
