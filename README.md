@@ -14,8 +14,7 @@
 ├── src/
 │   ├── server.py      # FastAPI 서버
 │   ├── chatbot.py     # Gradio UI 실행 파일
-│   ├── init_db.py     # 벡터 DB 초기화 스크립트
-│   └── chat_redis.py  # 레디스 관련 함수 모듈
+│   └── init_db.py     # 벡터 DB 초기화 스크립트
 ├── .env.template.     # 환경변수 예시
 ├── .gitignore
 ├── qa_vector.db       # init_db로 만든 밀버스DB

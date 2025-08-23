@@ -13,7 +13,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import time
-from chat_redis import save_chat, load_chat
+import json
+import redis
 
 load_dotenv()
 OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
@@ -86,6 +87,20 @@ async def stream_answer(msg):
     for ch in msg.split(' '):
         yield ch + ' '
         time.sleep(0.05)
+
+# 레디스에 채팅 내역을 저장, 불러오는 함수
+def save_chat(role, message):
+    r = redis.Redis(host='localhost', port=6379, db=0)
+    data = {'role':role, 'message':message}
+    chat_id = 'naver_qa_test'
+    r.rpush(chat_id, json.dumps(data))
+
+def load_chat(num): # num : 불러올 대화 수
+    r = redis.Redis(host='localhost', port=6379, db=0)
+    chat_id = 'naver_qa_test'
+    messages = r.lrange(chat_id, -num, -1)
+    messages = [json.loads(m) for m in messages]
+    return messages
 
 class CHAT(BaseModel):
     question : str
