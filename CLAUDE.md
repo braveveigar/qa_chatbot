@@ -5,17 +5,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Running the Project
 
 ```bash
-# Full startup (venv setup → pip install → Redis → FastAPI → Gradio)
+# 최초 1회: 환경 세팅 (venv 생성 → pip install)
+./setup.sh
+
+# 매 실행: Redis → FastAPI → Gradio
 ./run.sh
 
-# Run components individually (after activating venv, from project root)
+# 개별 실행 (프로젝트 루트에서)
 source venv/bin/activate
 redis-server --daemonize yes
-uvicorn src.server:app &        # FastAPI on port 8000
+uvicorn src.main:app &          # FastAPI on port 8000
 python -m src.chatbot           # Gradio UI on port 7860
 
-# Rebuild the vector DB from scratch (only if qa_vector.db is missing/corrupt)
+# 벡터 DB 재빌드 (qa_vector.db 없거나 손상 시)
 python -m src.init_db
+
+# 테스트
+venv/bin/pytest tests/ -v
 ```
 
 > **중요**: `src.*` 절대 임포트를 사용하므로 모든 명령은 프로젝트 루트에서 실행해야 합니다.
@@ -35,7 +41,7 @@ Copy `.env.template` to `.env` and set:
 
 | Process | File | Port |
 |---------|------|------|
-| Vector search + LLM API | `src/server.py` | 8000 |
+| Vector search + LLM API | `src/main.py` | 8000 |
 | Chat UI | `src/chatbot.py` | 7860 |
 | Session store | Redis | 6379 |
 
@@ -43,29 +49,45 @@ Copy `.env.template` to `.env` and set:
 
 ```
 src/
-├── config.py                        # 환경변수 로드
-├── server.py                        # FastAPI app 생성, 라우터 등록
+├── config.py                        # 환경변수 로드 및 검증
+├── prompts.py                       # 시스템 프롬프트 + 도구 정의
+├── main.py                          # FastAPI app 생성, 라우터 등록
 ├── chatbot.py                       # Gradio UI
 ├── init_db.py                       # 벡터 DB 초기화 (1회성)
+├── utils.py                         # stream_text 유틸
 ├── models/
 │   └── chat.py                      # Pydantic 요청 스키마
 ├── controllers/
-│   └── chat_controller.py           # HTTP 요청/응답만 담당 (APIRouter)
+│   ├── chat_controller.py           # POST /chat
+│   ├── session_controller.py        # POST /session/reset
+│   └── health_controller.py         # GET /health
 ├── services/
-│   ├── chat_service.py              # 비즈니스 로직 오케스트레이션
-│   └── llm_service.py              # OpenAI 호출 (관련성 판단, 임베딩, 답변 생성)
+│   ├── chat_service.py              # 대화 저장·로드 + 에이전트 위임
+│   └── llm_service.py               # 에이전트 루프 (tool calling + streaming)
 └── repositories/
     ├── session_repository.py        # Redis 대화 내역 CRUD
     └── vector_repository.py         # Milvus 벡터 검색
+
+workflows/                           # 카테고리별 워크플로우 규칙 (마크다운)
+├── 배송.md
+├── 반품_교환.md
+├── 결제_환불.md
+├── 판매자_관리.md
+├── 상품_등록.md
+└── 기타.md
 ```
 
-**Request flow — `POST /chat`:**
-1. `chat_controller` → `chat_service.process_chat(question)`
-2. `session_repository.save` → `session_repository.load(10)` (최근 10개)
-3. `llm_service.check_relevance` — 스마트스토어 무관 질문 조기 차단
-4. `llm_service.embed` → `vector_repository.search(limit=2)` — RAG
-5. `llm_service.generate_answer` — 스트리밍 토큰 yield
-6. 완성된 답변 `session_repository.save`
+**Agent flow — `POST /chat`:**
+1. `chat_service` — 사용자 메시지 Redis 저장, 최근 10개 대화 로드
+2. `llm_service.run_agent` 에이전트 루프 시작 (최대 5회 반복)
+   - `load_workflow(category)` — `workflows/{category}.md` 로드 → 처리 규칙 파악
+   - `search_qa(query)` — 질문 임베딩 → Milvus 유사 FAQ 검색 (top-2)
+   - 워크플로우 규칙에 따라 구조화된 답변 스트리밍 생성
+3. 완성된 답변 Redis 저장
+
+**워크플로우 수정 방법:**
+`workflows/*.md` 파일만 편집하면 코드 변경 없이 답변 규칙·구조가 바뀝니다.
+각 파일은 분류 기준 / 핵심 정보 추출 / 답변 구조 / 답변 규칙 섹션으로 구성됩니다.
 
 **Milvus collection schema** (`qa_vector.db`):
 - `id` (int), `vector` (1536-dim float), `question` (str), `answer` (str)
@@ -74,4 +96,3 @@ src/
 **Known limitations:**
 - `chat_id` is hardcoded as `'naver_qa_test'` in `session_repository.py` — no multi-session support
 - `SERVER_API_KEY` is loaded in `config.py` but never validated in any endpoint
-- Relevance classification uses a full LLM call; could be replaced with a lightweight classifier

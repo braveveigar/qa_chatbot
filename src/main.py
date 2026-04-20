@@ -19,4 +19,4 @@ app.include_router(health_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("src.server:app", host="127.0.0.1", port=8000)
+    uvicorn.run("src.main:app", host="127.0.0.1", port=8000, reload=True)

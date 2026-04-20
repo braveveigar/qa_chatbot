@@ -12,7 +12,7 @@
 ```bash
 .
 ├── src/
-│   ├── server.py      # FastAPI 서버
+│   ├── main.py      # FastAPI 서버
 │   ├── chatbot.py     # Gradio UI 실행 파일
 │   └── init_db.py     # 벡터 DB 초기화 스크립트
 ├── .env.template.     # 환경변수 예시
