@@ -7,8 +7,7 @@ router = APIRouter()
 async def health():
     redis_ok = True
     try:
-        r = session_repository._get_client()
-        r.ping()
+        session_repository.redis_client.ping()
     except Exception:
         redis_ok = False
 

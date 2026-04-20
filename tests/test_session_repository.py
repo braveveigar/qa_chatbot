@@ -7,7 +7,7 @@ from src.repositories import session_repository
 @pytest.fixture
 def mock_redis(monkeypatch):
     mock = MagicMock()
-    monkeypatch.setattr(session_repository, "_get_client", lambda: mock)
+    monkeypatch.setattr(session_repository, "redis_client", mock)
     return mock
 
 
@@ -25,7 +25,7 @@ def test_load_returns_parsed_messages(mock_redis):
         json.dumps({"role": "user", "message": "질문"}),
         json.dumps({"role": "assistant", "message": "답변"}),
     ]
-    mock_redis.lrange.return_value = [m.encode() for m in messages]
+    mock_redis.lrange.return_value = messages
     result = session_repository.load(10)
     assert len(result) == 2
     assert result[0] == {"role": "user", "message": "질문"}
@@ -33,20 +33,20 @@ def test_load_returns_parsed_messages(mock_redis):
 
 
 def test_load_returns_empty_on_redis_error(monkeypatch):
-    def bad_client():
-        raise ConnectionError("redis 연결 실패")
-    monkeypatch.setattr(session_repository, "_get_client", bad_client)
+    mock = MagicMock()
+    mock.lrange.side_effect = ConnectionError("redis 연결 실패")
+    monkeypatch.setattr(session_repository, "redis_client", mock)
     result = session_repository.load(10)
     assert result == []
 
 
 def test_save_does_not_raise_on_redis_error(monkeypatch):
-    def bad_client():
-        raise ConnectionError("redis 연결 실패")
-    monkeypatch.setattr(session_repository, "_get_client", bad_client)
+    mock = MagicMock()
+    mock.rpush.side_effect = ConnectionError("redis 연결 실패")
+    monkeypatch.setattr(session_repository, "redis_client", mock)
     session_repository.save("user", "질문")  # 예외가 밖으로 나오면 안 됨
 
 
-def test_clear_calls_flushdb(mock_redis):
+def test_clear_deletes_chat_key(mock_redis):
     session_repository.clear()
-    mock_redis.flushdb.assert_called_once()
+    mock_redis.delete.assert_called_once_with("naver_qa_test")
