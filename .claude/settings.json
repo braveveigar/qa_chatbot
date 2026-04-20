@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uvicorn *)",
+      "Bash(redis-server *)",
+      "Bash(redis-cli *)"
+    ]
+  }
+}

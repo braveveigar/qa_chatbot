@@ -1,18 +1,13 @@
-'''
-챗봇을 실질적으로 나타내는 프론트 모듈입니다.
-Gradio는 처음 써보는 프레임워크라 생성형 AI를 이용해 대부분 작성했습니다.
-'''
 import gradio as gr
 import requests
-import redis
+
+SERVER_URL = "http://127.0.0.1:8000"
 
 def reset_chat():
-    r = redis.Redis(host='localhost', port=6379, db=0)
-    r.flushdb()
+    requests.post(f"{SERVER_URL}/session/reset")
 
 def chat_with_api(message, history):
-    url = "http://127.0.0.1:8000/chat"
-    with requests.post(url, json={"question": message}, stream=True) as r:
+    with requests.post(f"{SERVER_URL}/chat", json={"question": message}, stream=True) as r:
         r.raise_for_status()
         answer = ""
         for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
@@ -30,7 +25,7 @@ with gr.Blocks() as demo:
             {"role": "assistant", "content": "ex) 스마트스토어 판매자 가입 방법 알려줘"}
         ]
     )
-    
+
     reset_button = gr.Button("채팅 초기화")
     reset_button.click(fn=reset_chat)
 
@@ -45,6 +40,5 @@ with gr.Blocks() as demo:
     chat_interface.render()
 
 if __name__ == "__main__":
-    r = redis.Redis(host='localhost', port=6379, db=0)
-    r.flushdb() # 서버 시작시 레디스 초기화
+    reset_chat()
     demo.queue().launch(share=True)

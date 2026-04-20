@@ -24,10 +24,10 @@ else
 fi
 
 # 벡터 데이터 베이스 생성 (이미 생성한 qa_vector.db를 사용하기에 실행 안해도 됨)
-# python src/init_db.py
+# python -m src.init_db
 
 # 서버 실행 (FastAPI)
 uvicorn src.server:app &
 
 # 챗봇 실행 (Gradio UI)
-python src/chatbot.py
+python -m src.chatbot
