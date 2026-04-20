@@ -4,6 +4,10 @@ from unittest.mock import MagicMock, patch
 from src.repositories import session_repository
 
 
+@pytest.fixture(autouse=True)
+def init_repository(monkeypatch):
+    monkeypatch.setattr(session_repository, "redis_client", MagicMock())
+
 @pytest.fixture
 def mock_redis(monkeypatch):
     mock = MagicMock()

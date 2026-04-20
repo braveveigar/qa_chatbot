@@ -1,13 +1,15 @@
 import gradio as gr
 import requests
+from src.config import SERVER_API_KEY
 
 SERVER_URL = "http://127.0.0.1:8000"
+_HEADERS = {"X-API-Key": SERVER_API_KEY}
 
 def reset_chat():
-    requests.post(f"{SERVER_URL}/session/reset")
+    requests.post(f"{SERVER_URL}/session/reset", headers=_HEADERS)
 
 def chat_with_api(message, history):
-    with requests.post(f"{SERVER_URL}/chat", json={"question": message}, stream=True) as r:
+    with requests.post(f"{SERVER_URL}/chat", json={"question": message}, headers=_HEADERS, stream=True) as r:
         r.raise_for_status()
         answer = ""
         for chunk in r.iter_content(chunk_size=None, decode_unicode=True):

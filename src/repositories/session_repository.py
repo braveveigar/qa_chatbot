@@ -3,12 +3,15 @@ import json
 
 _CHAT_ID = 'naver_qa_test'
 
-redis_client = redis.Redis(
-    host='localhost', 
-    port=6379, 
-    db=0,
-    decode_responses=True
-)
+redis_client: redis.Redis | None = None
+
+def init():
+    global redis_client
+    redis_client = redis.Redis(
+        host="localhost",
+        port=6379,
+        decode_responses=True,
+    )
 
 def save(role: str, message: str):
     try:

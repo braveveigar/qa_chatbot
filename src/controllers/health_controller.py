@@ -5,9 +5,11 @@ router = APIRouter()
 
 @router.get("/health")
 async def health():
-    redis_ok = True
+    redis_ok = False
     try:
-        session_repository.redis_client.ping()
+        if session_repository.redis_client is not None:
+            session_repository.redis_client.ping()
+            redis_ok = True
     except Exception:
         redis_ok = False
 
