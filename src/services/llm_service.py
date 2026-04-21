@@ -1,17 +1,47 @@
 import json
 from openai import OpenAI
 from src.config import CHAT_MODEL, EMBEDDING_MODEL
-from src.prompts import SYSTEM_PROMPT, TOOLS
+from src.prompts import (
+    CLASSIFY_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT,
+    CLASSIFY_TOOLS, GENERATE_TOOLS,
+)
 from src.repositories import vector_repository
 
 _client: OpenAI | None = None
-_MAX_TOOL_ITERATIONS = 5
+
+
+class ClarificationRequested(Exception):
+    def __init__(self, question: str):
+        self.question = question
+
 
 def init():
     global _client
     _client = OpenAI()
 
-# ── 도구 실행 ─────────────────────────────────────────────────────────────────
+
+# ── Step 1: 카테고리 분류 ────────────────────────────────────────────────────
+
+def _classify_category(question: str, chat_history: list) -> str:
+    input_items = [
+        {"role": "system", "content": CLASSIFY_SYSTEM_PROMPT},
+        *[{"role": m["role"], "content": m["message"]} for m in chat_history],
+        {"role": "user", "content": question},
+    ]
+    response = _client.responses.create(
+        model=CHAT_MODEL,
+        input=input_items,
+        tools=CLASSIFY_TOOLS,
+        tool_choice={"type": "function", "name": "load_workflow"},
+    )
+    for out in response.output:
+        if out.type == "function_call" and out.name == "load_workflow":
+            args = json.loads(out.arguments)
+            return args.get("category", "기타")
+    return "기타"
+
+
+# ── Step 2: 워크플로우 로드 / QA 검색 ────────────────────────────────────────
 
 def _load_workflow(category: str) -> str:
     path = f"workflows/{category}.md"
@@ -22,6 +52,7 @@ def _load_workflow(category: str) -> str:
         return _load_workflow("기타")
     except Exception as e:
         return f"워크플로우 로드 실패: {e}"
+
 
 def _execute_search(query: str) -> str:
     try:
@@ -34,72 +65,36 @@ def _execute_search(query: str) -> str:
     except Exception as e:
         return f"검색 중 오류가 발생했습니다: {e}"
 
-def _execute_tool(name: str, arguments: str, question: str) -> str:
-    args = json.loads(arguments)
-    if name == "load_workflow":
-        return _load_workflow(args.get("category", "기타"))
-    if name == "search_qa":
-        return _execute_search(args.get("query", question))
-    return "알 수 없는 도구입니다."
 
-def _to_input_items(response):
-    items = []
+# ── Step 3: 답변 생성 ────────────────────────────────────────────────────────
 
-    for out in response.output:
-        # 모델이 말한 텍스트
-        if out.type == "output_text":
-            items.append({
-                "role": "assistant",
-                "content": out.text,
-            })
-
-        # 모델이 호출한 tool
-        elif out.type == "function_call":
-            items.append({
-                "type": "function_call",
-                "name": out.name,
-                "call_id": out.call_id,
-                "arguments": out.arguments,
-            })
-
-    return items
-
-# ── 에이전트 루프 ──────────────────────────────────────────────────────────────
-
-def run_agent(question: str, chat_history: list):
-    # chat_history는 {"role": ..., "message": ...} 형식 → "content" 키로 변환
+def _stream_answer(question: str, chat_history: list, workflow: str, qa: str):
+    system = f"{GENERATE_SYSTEM_PROMPT}\n\n## 워크플로우\n{workflow}\n\n## 관련 FAQ\n{qa}"
     input_items = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system},
         *[{"role": m["role"], "content": m["message"]} for m in chat_history],
         {"role": "user", "content": question},
     ]
+    with _client.responses.stream(
+        model=CHAT_MODEL,
+        input=input_items,
+        tools=GENERATE_TOOLS,
+        tool_choice="auto",
+    ) as stream:
+        for event in stream:
+            if event.type == "response.output_text.delta":
+                yield event.delta
+            elif event.type == "response.output_item.done":
+                if event.item.type == "function_call" and event.item.name == "ask_clarification":
+                    args = json.loads(event.item.arguments)
+                    yield args.get("question", "")
+                    return
 
-    for _ in range(_MAX_TOOL_ITERATIONS):
-        tool_calls = []
 
-        with _client.responses.stream(
-            model=CHAT_MODEL,
-            input=input_items,
-            tools=TOOLS,
-        ) as stream:
-            for event in stream:
-                if event.type == "response.output_text.delta":
-                    yield event.delta
-                elif event.type == "response.output_item.done":
-                    if event.item.type == "function_call":
-                        tool_calls.append(event.item)
+# ── 진입점 ───────────────────────────────────────────────────────────────────
 
-            response = stream.get_final_response()
-
-        # 컨텍스트 누적: 교체 대신 extend
-        input_items = input_items + _to_input_items(response)
-
-        if not tool_calls:
-            break
-
-        for call in tool_calls:
-            input_items.append({
-                "type": "function_call_output",
-                "call_id": call.call_id,
-                "output": _execute_tool(call.name, call.arguments, question),
-            })
+def run_agent(question: str, chat_history: list):
+    category = _classify_category(question, chat_history)
+    workflow = _load_workflow(category)
+    qa = _execute_search(question)
+    yield from _stream_answer(question, chat_history, workflow, qa)
