@@ -3,6 +3,8 @@ from unittest.mock import MagicMock
 from src.services import chat_service, llm_service
 from src.repositories import session_repository
 
+_SID = "test_session"
+
 
 @pytest.fixture(autouse=True)
 def mock_session(monkeypatch):
@@ -16,20 +18,20 @@ def _consume(generator) -> str:
 
 def test_streams_agent_answer(monkeypatch):
     monkeypatch.setattr(llm_service, "run_agent", lambda q, h: iter(["배송은 ", "2~3일 ", "소요됩니다."]))
-    result = _consume(chat_service.process_chat("배송 기간이 얼마나 걸려요?"))
+    result = _consume(chat_service.process_chat(_SID, "배송 기간이 얼마나 걸려요?"))
     assert result == "배송은 2~3일 소요됩니다."
 
 
 def test_saves_user_message_before_agent(monkeypatch):
     monkeypatch.setattr(llm_service, "run_agent", lambda q, h: iter([]))
-    chat_service.process_chat("질문")
-    session_repository.save.assert_any_call("user", "질문")
+    _consume(chat_service.process_chat(_SID, "질문"))
+    session_repository.save.assert_any_call(_SID, "user", "질문")
 
 
 def test_saves_assistant_answer_after_stream(monkeypatch):
     monkeypatch.setattr(llm_service, "run_agent", lambda q, h: iter(["안녕", "하세요"]))
-    _consume(chat_service.process_chat("질문"))
-    session_repository.save.assert_any_call("assistant", "안녕하세요")
+    _consume(chat_service.process_chat(_SID, "질문"))
+    session_repository.save.assert_any_call(_SID, "assistant", "안녕하세요")
 
 
 def test_passes_chat_history_to_agent(monkeypatch):
@@ -42,5 +44,5 @@ def test_passes_chat_history_to_agent(monkeypatch):
         return iter([])
 
     monkeypatch.setattr(llm_service, "run_agent", mock_agent)
-    _consume(chat_service.process_chat("새 질문"))
+    _consume(chat_service.process_chat(_SID, "새 질문"))
     assert received_history == history

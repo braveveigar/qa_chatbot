@@ -1,15 +1,21 @@
+import uuid
 import gradio as gr
 import requests
-from src.config import SERVER_API_KEY
+from src.core.config import SERVER_API_KEY
 
 SERVER_URL = "http://127.0.0.1:8000"
 _HEADERS = {"X-API-Key": SERVER_API_KEY}
 
-def reset_chat():
-    requests.post(f"{SERVER_URL}/session/reset", headers=_HEADERS)
+def reset_chat(session_id: str):
+    requests.post(f"{SERVER_URL}/session/reset", json={"session_id": session_id}, headers=_HEADERS)
 
-def chat_with_api(message, history):
-    with requests.post(f"{SERVER_URL}/chat", json={"question": message}, headers=_HEADERS, stream=True) as r:
+def chat_with_api(message, history, session_id: str):
+    with requests.post(
+        f"{SERVER_URL}/chat",
+        json={"session_id": session_id, "question": message},
+        headers=_HEADERS,
+        stream=True,
+    ) as r:
         r.raise_for_status()
         answer = ""
         for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
@@ -18,6 +24,8 @@ def chat_with_api(message, history):
                 yield answer
 
 with gr.Blocks() as demo:
+    session_id = gr.State(lambda: str(uuid.uuid4()))
+
     chatbot_component = gr.Chatbot(
         type="messages",
         value=[
@@ -29,11 +37,12 @@ with gr.Blocks() as demo:
     )
 
     reset_button = gr.Button("채팅 초기화")
-    reset_button.click(fn=reset_chat)
+    reset_button.click(fn=reset_chat, inputs=[session_id])
 
     chat_interface = gr.ChatInterface(
         fn=chat_with_api,
         chatbot=chatbot_component,
+        additional_inputs=[session_id],
         type="messages",
         title="네이버 스마트스토어 FAQ 챗봇",
         description="네이버 스마트 스토어 챗봇",
@@ -42,5 +51,4 @@ with gr.Blocks() as demo:
     chat_interface.render()
 
 if __name__ == "__main__":
-    reset_chat()
-    demo.queue().launch(share=True)
+    demo.queue().launch()

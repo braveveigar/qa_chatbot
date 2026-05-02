@@ -2,7 +2,7 @@ import pickle
 from openai import OpenAI
 from pymilvus import MilvusClient
 from tqdm import tqdm
-from src.config import EMBEDDING_MODEL, COLLECTION_NAME
+from src.core.config import EMBEDDING_MODEL, COLLECTION_NAME
 
 def init_db():
     openai_client = OpenAI()

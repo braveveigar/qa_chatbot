@@ -1,6 +1,6 @@
 from fastapi import Security, HTTPException
 from fastapi.security import APIKeyHeader
-from src.config import SERVER_API_KEY
+from src.core.config import SERVER_API_KEY
 
 _api_key_header = APIKeyHeader(name="X-API-Key")
 

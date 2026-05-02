@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
+from openai import APITimeoutError, APIError
 from src.services import llm_service
 
 
@@ -65,6 +66,54 @@ def test_execute_search_returns_answers(monkeypatch):
 
     assert "배송" in llm_service._execute_search("배송 기간")
 
+
+# ── _classify_category 에러 처리 ─────────────────────────────────────────────
+
+def test_classify_category_falls_back_on_timeout():
+    mock_client = MagicMock()
+    mock_client.responses.create.side_effect = APITimeoutError(request=MagicMock())
+    llm_service._client = mock_client
+
+    result = llm_service._classify_category("질문", [])
+    assert result == "기타"
+
+
+def test_classify_category_falls_back_on_api_error():
+    mock_client = MagicMock()
+    mock_client.responses.create.side_effect = APIError(
+        message="서버 오류", request=MagicMock(), body=None
+    )
+    llm_service._client = mock_client
+
+    result = llm_service._classify_category("질문", [])
+    assert result == "기타"
+
+
+def test_classify_category_falls_back_on_invalid_json():
+    mock_client = MagicMock()
+    mock_out = MagicMock()
+    mock_out.type = "function_call"
+    mock_out.name = "load_workflow"
+    mock_out.arguments = "invalid json {"
+    mock_client.responses.create.return_value.output = [mock_out]
+    llm_service._client = mock_client
+
+    result = llm_service._classify_category("질문", [])
+    assert result == "기타"
+
+
+# ── _execute_search 에러 처리 ─────────────────────────────────────────────────
+
+def test_execute_search_falls_back_on_timeout():
+    mock_client = MagicMock()
+    mock_client.embeddings.create.side_effect = APITimeoutError(request=MagicMock())
+    llm_service._client = mock_client
+
+    result = llm_service._execute_search("배송 기간")
+    assert result == "관련 정보를 찾을 수 없습니다."
+
+
+# ── session_repository.clear 에러 처리 ───────────────────────────────────────
 
 # ── ask_clarification ─────────────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
 from src.repositories import session_repository, vector_repository
 from src.services import llm_service
-from src.dependencies import verify_api_key
+from src.core.dependencies import verify_api_key
 
 
 @pytest.fixture
@@ -24,37 +24,52 @@ def client(monkeypatch):
 
 # ── /health ──────────────────────────────────────────────────────────────────
 
-def test_health_redis_ok_milvus_ok(monkeypatch, client):
-    mock_r = MagicMock()
-    monkeypatch.setattr(session_repository, "redis_client", mock_r)
+def test_health_all_ok(monkeypatch, client):
+    monkeypatch.setattr(session_repository, "redis_client", MagicMock())
     monkeypatch.setattr(vector_repository, "is_connected", lambda: True)
+    monkeypatch.setattr(llm_service, "is_ready", lambda: True)
     res = client.get("/health")
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
+    assert res.json()["openai"] == "ok"
 
 
-def test_health_redis_down(monkeypatch, client):
+def test_health_redis_down_returns_503(monkeypatch, client):
     mock_r = MagicMock()
     mock_r.ping.side_effect = ConnectionError()
     monkeypatch.setattr(session_repository, "redis_client", mock_r)
     monkeypatch.setattr(vector_repository, "is_connected", lambda: True)
+    monkeypatch.setattr(llm_service, "is_ready", lambda: True)
     res = client.get("/health")
+    assert res.status_code == 503
     assert res.json()["redis"] == "error"
     assert res.json()["status"] == "degraded"
 
 
-def test_health_milvus_down(monkeypatch, client):
+def test_health_milvus_down_returns_503(monkeypatch, client):
     monkeypatch.setattr(session_repository, "redis_client", MagicMock())
     monkeypatch.setattr(vector_repository, "is_connected", lambda: False)
+    monkeypatch.setattr(llm_service, "is_ready", lambda: True)
     res = client.get("/health")
+    assert res.status_code == 503
     assert res.json()["milvus"] == "error"
+    assert res.json()["status"] == "degraded"
+
+
+def test_health_openai_down_returns_503(monkeypatch, client):
+    monkeypatch.setattr(session_repository, "redis_client", MagicMock())
+    monkeypatch.setattr(vector_repository, "is_connected", lambda: True)
+    monkeypatch.setattr(llm_service, "is_ready", lambda: False)
+    res = client.get("/health")
+    assert res.status_code == 503
+    assert res.json()["openai"] == "error"
     assert res.json()["status"] == "degraded"
 
 
 # ── /session/reset ────────────────────────────────────────────────────────────
 
 def test_session_reset(client):
-    res = client.post("/session/reset")
+    res = client.post("/session/reset", json={"session_id": "test_session"})
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
 
@@ -62,20 +77,20 @@ def test_session_reset(client):
 # ── /chat ─────────────────────────────────────────────────────────────────────
 
 def test_chat_missing_question_field(client):
-    res = client.post("/chat", json={})
+    res = client.post("/chat", json={"session_id": "test_session"})
     assert res.status_code == 422
 
 
 def test_chat_streams_agent_answer(monkeypatch, client):
     monkeypatch.setattr(llm_service, "run_agent", lambda q, h: iter(["반품은 ", "7일 이내 ", "가능합니다."]))
-    res = client.post("/chat", json={"question": "반품 방법 알려줘"})
+    res = client.post("/chat", json={"session_id": "test_session", "question": "반품 방법 알려줘"})
     assert res.status_code == 200
     assert "반품" in res.text
 
 
 def test_chat_irrelevant_returns_agent_response(monkeypatch, client):
     monkeypatch.setattr(llm_service, "run_agent", lambda q, h: iter(["스마트스토어 관련 질문을 부탁드립니다."]))
-    res = client.post("/chat", json={"question": "오늘 날씨"})
+    res = client.post("/chat", json={"session_id": "test_session", "question": "오늘 날씨"})
     assert res.status_code == 200
     assert "스마트스토어" in res.text
 

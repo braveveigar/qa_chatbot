@@ -1,5 +1,8 @@
+import logging
 from pymilvus import MilvusClient
-from src.config import COLLECTION_NAME
+from src.core.config import COLLECTION_NAME
+
+logger = logging.getLogger(__name__)
 
 _client: MilvusClient | None = None
 
@@ -7,8 +10,8 @@ def init():
     global _client
     try:
         _client = MilvusClient("qa_vector.db")
-    except Exception:
-        print("Milvus DB 불러오기 실패")
+    except Exception as e:
+        logger.error("Milvus DB 초기화 실패: %s", e)
 
 def search(vector: list, limit: int = 2):
     if _client is None:

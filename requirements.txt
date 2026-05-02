@@ -27,6 +27,8 @@ jiter==0.10.0
 markdown-it-py==4.0.0
 MarkupSafe==3.0.2
 mdurl==0.1.2
+mcp==1.27.0
+slowapi==0.1.9
 milvus-lite==2.5.1
 numpy==2.3.2
 openai==1.101.0
@@ -55,7 +57,7 @@ setuptools==80.9.0
 shellingham==1.5.4
 six==1.17.0
 sniffio==1.3.1
-starlette==0.47.2
+starlette==0.49.3
 tomlkit==0.13.3
 tqdm==4.67.1
 typer==0.16.1

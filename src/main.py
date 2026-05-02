@@ -1,13 +1,16 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from starlette.middleware.cors import CORSMiddleware  # type: ignore[import-untyped]
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from src.controllers.chat_controller import router as chat_router
 from src.controllers.session_controller import router as session_router
 from src.controllers.health_controller import router as health_router
 from src.repositories import vector_repository, session_repository
 from src.services import llm_service
-from src.middleware import LoggingMiddleware
-from src.dependencies import verify_api_key
+from src.core.middleware import LoggingMiddleware
+from src.core.dependencies import verify_api_key
+from src.core.rate_limit import limiter
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,6 +20,9 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(
